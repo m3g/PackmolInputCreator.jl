@@ -5,6 +5,7 @@ using PDBTools
 export find_x
 export convert_c
 export write_input
+export interpolate
 
 # conversion factor from mL/mol to Å^3/molecule
 const CMV = 1e24 / 6.02e23   

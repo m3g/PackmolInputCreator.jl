@@ -59,7 +59,7 @@ x = find_x(concentration, 100.4, 1.38217, ρ)
 println("Molar fraction = $x")
 
 # Iterpolate to get density given molar fraction
-density = PackmolInputCreator.interpolate(x,ρ)
+density = interpolate(x,ρ)
 println("Density = $density")
 
 data_dir="$script_dir/../InputData"
