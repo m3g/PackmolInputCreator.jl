@@ -32,8 +32,10 @@ with a desired volume fraction (%), given a data table of densities
 as a function of the molar fractions.
 
 """
-function find_x(vv, cossolvent_mass, density_pure, densities::Matrix;
-                tol = 1e-5) 
+function find_x(
+  vv, cossolvent_mass, density_pure, densities::Matrix;
+  tol = 1e-5, maxit=1000
+) 
 
   xl = densities[1,1]
   xr = densities[end,1]
@@ -43,25 +45,24 @@ function find_x(vv, cossolvent_mass, density_pure, densities::Matrix;
     increasing = false
   end
   x = (xr-xl)/2
-  xnew = convert_c(vv,"%vv" => "x", density=interpolate(x,densities),
-                   molar_mass=cossolvent_mass, density_pure=density_pure)
+  xnew = convert_c(
+    vv,"%vv" => "x", density=interpolate(x,densities),
+    molar_mass=cossolvent_mass, density_pure=density_pure
+  )
+  it = 0
   while abs(xnew-x) > tol 
     if xnew > x
-      if increasing
-        xl = x 
-      else
-        xr = x
-      end
+      increasing ? xl = x : xr = x
     else
-      if increasing
-        xr = x 
-      else
-        xl = x 
-      end
+      increasing ? xr = x : xl = x
     end
     x = (xr+xl)/2
-    xnew = convert_c(vv,"%vv" => "x", density=interpolate(x,densities),
-                     molar_mass=cossolvent_mass, density_pure=density_pure)
+    xnew = convert_c(
+      vv,"%vv" => "x", density=interpolate(x,densities),
+      molar_mass=cossolvent_mass, density_pure=density_pure
+    )
+    it += 1
+    it > maxit && error("Maximum number of iterations achieved.")
   end
   return x
 end
@@ -71,12 +72,14 @@ end
 Convert concentrations.
 
 """
-function convert_c(cin,units;
-                   density=nothing, # solution
-                   density_pure=nothing, # cossolvent
-                   molar_mass=18., # cossolvent
-                   molar_mass_water=18.,
-                   density_water=1.0)
+function convert_c(
+  cin,units;
+  density=nothing, # solution
+  density_pure=nothing, # cossolvent
+  molar_mass=18., # cossolvent
+  molar_mass_water=18.,
+  density_water=1.0
+)
 
   # Why not allow this
   units[1] == units[2] && return cin
@@ -154,12 +157,16 @@ end
 Function that generates an input file for Packmol. By default, the concentrations is given in mol/L, but it can also be given in molar fraction "x" or volume percentage "%vv", using `cunit="x"` or `cunit="%vv"`. 
 
 """
-function write_input(pdbfile::String, solvent_file::String, concentration::Real, box_side::Real; 
-                     water_file="tip4p2005.pdb",  
-                     density=1.0,
-                     density_pure_solvent=nothing,
-                     box_file="box.inp",
-                     cunit="mol/L")
+function write_input(
+  pdbfile::String, solvent_file::String, concentration::Real, box_side::Real; 
+  water_file="tip4p2005.pdb",  
+  density=1.0,
+  density_pure_solvent=nothing,
+  cunit="mol/L",
+  packmol_input="box.inp",
+  packmol_output="system.pdb"
+ 
+)
 
   protein = readPDB(pdbfile)
   cossolvent = readPDB(solvent_file)
@@ -174,18 +181,24 @@ function write_input(pdbfile::String, solvent_file::String, concentration::Real,
   ρc = density_pure_solvent
 
   # Convert concentration to mol/L
-  cc_mol = convert_c(concentration, cunit => "mol/L",
-                     density=ρ,
-                     density_pure=ρc,
-                     molar_mass=Mc)
-  c_vv = convert_c(concentration, cunit => "%vv",
-                   density=ρ,
-                   density_pure=ρc,
-                   molar_mass=Mc)
-  c_x = convert_c(concentration, cunit => "x",
-                  density=ρ,
-                  density_pure=ρc,
-                  molar_mass=Mc)
+  cc_mol = convert_c(
+    concentration, cunit => "mol/L",
+    density=ρ,
+    density_pure=ρc,
+    molar_mass=Mc
+  )
+  c_vv = convert_c(
+    concentration, cunit => "%vv",
+    density=ρ,
+    density_pure=ρc,
+    molar_mass=Mc
+  )
+  c_x = convert_c(
+    concentration, cunit => "x",
+    density=ρ,
+    density_pure=ρc,
+    molar_mass=Mc
+  )
 
   # Convert cossolvent concentration in molecules/Å³
   cc = CMC*cc_mol
@@ -214,63 +227,64 @@ function write_input(pdbfile::String, solvent_file::String, concentration::Real,
   # Final recovered concentration in %vv
   vv = 100*CMV*(nc*Mc/ρc)/vs
 
-  println("""
+  println(
+    """
+    Summary:
+    ========
+    Target concentration = $cc_mol mol/L
+                         = $c_vv %vv
+                         = $c_x x
+                         = $cc molecules/Å³
 
-          Summary:
-          ========
-          Target concentration = $cc_mol mol/L
-                               = $c_vv %vv
-                               = $c_x x
-                               = $cc molecules/Å³
+    Box volume = $vbox Å³
+    Solution volume = $vs Å³   
 
-          Box volume = $vbox Å³
-          Solution volume = $vs Å³   
+    Density = $ρ g/mL
+    Protein molar mass = $Mp g/mol
+    Cossolvent molar mass = $Mc g/mol
 
-          Density = $ρ g/mL
-          Protein molar mass = $Mp g/mol
-          Cossolvent molar mass = $Mc g/mol
+    Number of cossolvent molecules = $nc molecules
+    Number of water molecules = $nw molecules
 
-          Number of cossolvent molecules = $nc molecules
-          Number of water molecules = $nw molecules
-
-          Final cossolvent concentration = $cc_f mol/L
-          Final water concentration = $cw_f mol/L
-                                    = $(CMC*cw_f) molecules/Å³
-          Final solvent density = $ρ g/mL
-          Final %vv concentration = $vv %
-          Final molar fraction = $(nc/(nc+nw))
-          """)
+    Final cossolvent concentration = $cc_f mol/L
+    Final water concentration = $cw_f mol/L
+                              = $(CMC*cw_f) molecules/Å³
+    Final solvent density = $ρ g/mL
+    Final %vv concentration = $vv %
+    Final molar fraction = $(nc/(nc+nw))
+    """)
 
   l = box_side/2
-  open(box_file,"w") do io
-    println(io,"""
-               tolerance 2.0
-               output system.pdb
-               add_box_sides 1.0
-               filetype pdb
-               seed -1
+  open(packmol_input,"w") do io
+    println(io,
+      """
+      tolerance 2.0
+      output $packmol_output
+      add_box_sides 1.0
+      filetype pdb
+      seed -1
 
-               structure $pdbfile
-                 number 1
-                 center
-                 fixed 0. 0. 0. 0. 0. 0.
-               end structure
+      structure $pdbfile
+        number 1
+        center
+        fixed 0. 0. 0. 0. 0. 0.
+      end structure
 
-               structure $water_file
-                 number $nw
-                 inside box -$l -$l -$l $l $l $l
-               end structure
-               """)
-      if nc > 0 
-        println(io,"""
-                structure $solvent_file
-                  number $nc
-                  inside box -$l -$l -$l $l $l $l
-                end structure
-                """)
-      end
+      structure $water_file
+        number $nw
+        inside box -$l -$l -$l $l $l $l
+      end structure
+      """)
+    nc == 0 && break
+    println(io,
+      """
+      structure $solvent_file
+        number $nc
+        inside box -$l -$l -$l $l $l $l
+      end structure
+      """)
  end
- println("Wrote file: $box_file")
+ println("Wrote file: $packmol_input")
 
 end # function write_input
 
