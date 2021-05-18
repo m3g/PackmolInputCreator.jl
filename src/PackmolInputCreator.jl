@@ -275,14 +275,15 @@ function write_input(
         inside box -$l -$l -$l $l $l $l
       end structure
       """)
-    nc == 0 && break
-    println(io,
-      """
-      structure $solvent_file
-        number $nc
-        inside box -$l -$l -$l $l $l $l
-      end structure
-      """)
+    if nc > 0 
+      println(io,
+        """
+        structure $solvent_file
+          number $nc
+          inside box -$l -$l -$l $l $l $l
+        end structure
+        """)
+   end
  end
  println("Wrote file: $packmol_input")
 
