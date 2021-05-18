@@ -7,7 +7,7 @@ all functions:
 ## Installation
 
 ```julia
-] add https://github.com/m3g/PackmolInputCreator
+] add https://github.com/m3g/PackmolInputCreator.jl
 
 ```
 
