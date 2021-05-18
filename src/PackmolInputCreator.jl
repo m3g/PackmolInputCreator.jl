@@ -173,10 +173,10 @@ function write_input(pdbfile::String, solvent_file::String, concentration::Real,
   ρc = density_pure_solvent
 
   # Convert concentration to mol/L
-  cc = convert_c(concentration, cunit => "mol/L",
-                 density=ρ,
-                 density_pure=ρc,
-                 molar_mass=Mc)
+  cc_mol = convert_c(concentration, cunit => "mol/L",
+                     density=ρ,
+                     density_pure=ρc,
+                     molar_mass=Mc)
   c_vv = convert_c(concentration, cunit => "%vv",
                    density=ρ,
                    density_pure=ρc,
@@ -187,7 +187,7 @@ function write_input(pdbfile::String, solvent_file::String, concentration::Real,
                   molar_mass=Mc)
 
   # Convert cossolvent concentration in molecules/Å³
-  cc = CMC*cc
+  cc = CMC*cc_mol
 
   # Box volume (Å³)
   vbox = box_side^3
@@ -217,9 +217,10 @@ function write_input(pdbfile::String, solvent_file::String, concentration::Real,
 
           Summary:
           ========
-          Target concentration = $cc mol/L
+          Target concentration = $cc_mol mol/L
                                = $c_vv %vv
                                = $c_x x
+                               = $cc molecules/Å³
 
           Box volume = $vbox Å³
           Solution volume = $vs Å³   
@@ -227,9 +228,6 @@ function write_input(pdbfile::String, solvent_file::String, concentration::Real,
           Density = $ρ g/mL
           Protein molar mass = $Mp g/mol
           Cossolvent molar mass = $Mc g/mol
-
-          Concentration = $concentration mol/L
-                        = $cc molecules/Å³
 
           Number of cossolvent molecules = $nc molecules
           Number of water molecules = $nw molecules
