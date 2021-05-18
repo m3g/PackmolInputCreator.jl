@@ -4,6 +4,15 @@ This packages helps creating the input files for Packmol, by computing the numbe
 molecules necessary to build a box with a desired concentration. Example of usage with
 all functions: 
 
+## Installation
+
+```julia
+] add https://github.com/m3g/PackmolInputCreator
+
+```
+
+## Example
+
 ```julia
 #
 # run with julia AAQAA_60vv.jl 
