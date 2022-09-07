@@ -6,9 +6,12 @@ all functions:
 
 ## Installation
 
-```julia
-] add https://github.com/m3g/PackmolInputCreator.jl
+This is a Julia package. Install Julia, version 1.6 or higher, from the [official download site](https://julialang.org/downloads/). 
 
+```julia
+julia> using Pkg
+
+julia> Pkg.add(url="https://github.com/m3g/PackmolInputCreator.jl")
 ```
 
 ## Example
