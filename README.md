@@ -56,7 +56,7 @@ script_dir = @__DIR__
 # What we want
 concentration = 50.0 #%vv
 
-# Find to what molar fraction this volume fraction corresponts
+# Find to what molar fraction this volume fraction corresponds
 x = find_x(concentration, 100.4, 1.38217, ρ)
 println("Molar fraction = $x")
 
