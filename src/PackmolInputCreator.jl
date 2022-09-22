@@ -8,20 +8,20 @@ export write_input
 export interpolate
 
 # conversion factor from mL/mol to Å^3/molecule
-const CMV = 1e24 / 6.02e23   
+const CMV = 1e24 / 6.02e23
 
 # conversion factor from mol/L to molecules/Å^3
-const CMC = 6.02e23 / 1e27   
+const CMC = 6.02e23 / 1e27
 
 """
 
 Interpolate a value from a (x,y) data matrix
 
 """
-function interpolate(x,ρ)  
-  i = findfirst(d -> d > x, ρ[:,1])
-  dρdx = (ρ[i,2]-ρ[i-1,2])/(ρ[i,1]-ρ[i-1,1])
-  d = ρ[i-1,2] + dρdx * (x - ρ[i-1,1])
+function interpolate(x, ρ)
+  i = findfirst(d -> d > x, ρ[:, 1])
+  dρdx = (ρ[i, 2] - ρ[i-1, 2]) / (ρ[i, 1] - ρ[i-1, 1])
+  d = ρ[i-1, 2] + dρdx * (x - ρ[i-1, 1])
   return d
 end
 
@@ -34,31 +34,31 @@ as a function of the molar fractions.
 """
 function find_x(
   vv, cossolvent_mass, density_pure, densities::Matrix;
-  tol = 1e-5, maxit=1000
-) 
+  tol=1e-5, maxit=1000
+)
 
-  xl = densities[1,1]
-  xr = densities[end,1]
-  if xl < xr 
+  xl = densities[1, 1]
+  xr = densities[end, 1]
+  if xl < xr
     increasing = true
   else
     increasing = false
   end
-  x = (xr-xl)/2
+  x = (xr - xl) / 2
   xnew = convert_c(
-    vv,"%vv" => "x", density=interpolate(x,densities),
+    vv, "%vv" => "x", density=interpolate(x, densities),
     molar_mass=cossolvent_mass, density_pure=density_pure
   )
   it = 0
-  while abs(xnew-x) > tol 
+  while abs(xnew - x) > tol
     if xnew > x
       increasing ? xl = x : xr = x
     else
       increasing ? xr = x : xl = x
     end
-    x = (xr+xl)/2
+    x = (xr + xl) / 2
     xnew = convert_c(
-      vv,"%vv" => "x", density=interpolate(x,densities),
+      vv, "%vv" => "x", density=interpolate(x, densities),
       molar_mass=cossolvent_mass, density_pure=density_pure
     )
     it += 1
@@ -76,8 +76,8 @@ function convert_c(
   cin, units;
   density=nothing, # solution
   density_pure=nothing, # cossolvent
-  molar_mass=18., # cossolvent
-  molar_mass_water=18.,
+  molar_mass=18.0, # cossolvent
+  molar_mass_water=18.0,
   density_water=1.0
 )
 
@@ -94,17 +94,17 @@ function convert_c(
     if isnothing(ρc)
       error("Density of pure solvent is required to convert from %vv.")
     end
-    vv = cin/100
-    nc = ( ρc*vv / Mc )
+    vv = cin / 100
+    nc = (ρc * vv / Mc)
     if units[2] == "x"
       if isnothing(ρ)
         error("Density of solution is required to convert to molar fraction.")
       end
-      nw = ( ρ - nc*Mc ) / Mw
-      return nc/(nc + nw)
+      nw = (ρ - nc * Mc) / Mw
+      return nc / (nc + nw)
     end
     if units[2] == "mol/L"
-      return 1000*nc
+      return 1000 * nc
     end
   end
 
@@ -113,17 +113,17 @@ function convert_c(
       error("Density of solution is required to convert from molar fraction.")
     end
     x = cin
-    nc = ρ / ( Mc + Mw*(1-x)/x )
+    nc = ρ / (Mc + Mw * (1 - x) / x)
     if units[2] == "mol/L"
-      return 1000*nc
+      return 1000 * nc
     end
     if units[2] == "%vv"
       if isnothing(ρc)
         error("Density of pure solvent is required to convert to %vv.")
       end
-      nw = nc*(1-x)/x
+      nw = nc * (1 - x) / x
       Vc = nc * Mc / ρc
-      vv = 100*Vc
+      vv = 100 * Vc
       return vv
     end
   end
@@ -132,18 +132,18 @@ function convert_c(
     if isnothing(ρ)
       error("Density of solution is required to convert from molarity.")
     end
-    nc = cin/1000 
-    nw = ( ρ - nc*Mc ) / Mw
+    nc = cin / 1000
+    nw = (ρ - nc * Mc) / Mw
     if units[2] == "x"
-      return nc/(nc + nw)
+      return nc / (nc + nw)
     end
     if units[2] == "%vv"
       if isnothing(ρc)
         error("Density of pure solvent is required to convert to %vv.")
         return nothing
       end
-      Vc = nc * Mc / ρc 
-      vv = 100*Vc
+      Vc = nc * Mc / ρc
+      vv = 100 * Vc
       return vv
     end
   end
@@ -156,15 +156,13 @@ Function that generates an input file for Packmol. By default, the concentration
 
 """
 function write_input(
-  pdbfile::String, solvent_file::String, concentration::Real, box_side::Real; 
-  water_file="tip4p2005.pdb",  
+  pdbfile::String, solvent_file::String, concentration::Real, box_side::Real;
+  water_file="tip4p2005.pdb",
   density=1.0,
   density_pure_solvent=nothing,
   cunit="mol/L",
   packmol_input="box.inp",
-  packmol_output="system.pdb"
- 
-)
+  packmol_output="system.pdb")
 
   protein = readPDB(pdbfile)
   cossolvent = readPDB(solvent_file)
@@ -184,16 +182,16 @@ function write_input(
   c_x = convert_c(concentration, cunit => "x", density=ρ, density_pure=ρc, molar_mass=Mc)
 
   # Convert cossolvent concentration in molecules/Å³
-  cc = CMC*cc_mol
+  cc = CMC * cc_mol
 
   # Box volume (Å³)
   vbox = box_side^3
 
   # Solution volume (vbox - vprotein)
-  vs = vbox - CMV*Mp/ρ
+  vs = vbox - CMV * Mp / ρ
 
   # number of cossolvent molecules: cossolvent concentration × volume of the solution
-  nc = round(Int,cc*vs)
+  nc = round(Int, cc * vs)
 
   #
   # number of water molecules, obtained from the mass difference
@@ -207,19 +205,19 @@ function write_input(
   # But since we have vs in Å³, we need the conversion vs = vs / 1e24, and we have
   # nw = (NA*ρ*vs/1e24 - nc*Mc)/Mw 
   # given that CMV = 1e24/NA, we have nw = (ρ*vs/CMV - nc*Mc)/Mw
-  nw = round(Int,(ρ*vs/CMV - nc*Mc)/Mw)
+  nw = round(Int, (ρ * vs / CMV - nc * Mc) / Mw)
 
   # Final density of the solution
-  ρ = CMV*(Mc*nc + Mw*nw)/vs
-  
+  ρ = CMV * (Mc * nc + Mw * nw) / vs
+
   # Final cossolvent concentration (mol/L)
-  cc_f = 1000*(nc/vs)*CMV
+  cc_f = 1000 * (nc / vs) * CMV
 
   # Final water concentration (mol/L)
-  cw_f = 1000*(nw/vs)*CMV
+  cw_f = 1000 * (nw / vs) * CMV
 
   # Final recovered concentration in %vv
-  vv = 100*CMV*(nc*Mc/ρc)/vs
+  vv = 100 * CMV * (nc * Mc / ρc) / vs
 
   println(
     """
@@ -248,8 +246,8 @@ function write_input(
     Final molar fraction = $(nc/(nc+nw))
     """)
 
-  l = box_side/2
-  open(packmol_input,"w") do io
+  l = box_side / 2
+  open(packmol_input, "w") do io
     println(io,
       """
       tolerance 2.0
@@ -269,7 +267,7 @@ function write_input(
         inside box -$l -$l -$l $l $l $l
       end structure
       """)
-    if nc > 0 
+    if nc > 0
       println(io,
         """
         structure $solvent_file
@@ -277,9 +275,9 @@ function write_input(
           inside box -$l -$l -$l $l $l $l
         end structure
         """)
-   end
- end
- println("Wrote file: $packmol_input")
+    end
+  end
+  println("Wrote file: $packmol_input")
 
 end # function write_input
 
