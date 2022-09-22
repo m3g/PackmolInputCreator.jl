@@ -73,7 +73,7 @@ Convert concentrations.
 
 """
 function convert_c(
-  cin,units;
+  cin, units;
   density=nothing, # solution
   density_pure=nothing, # cossolvent
   molar_mass=18., # cossolvent
@@ -81,25 +81,23 @@ function convert_c(
   density_water=1.0
 )
 
-  # Why not allow this
+  # If the units didn't change, just return the input concentrations
   units[1] == units[2] && return cin
 
-  ρ = density
-  ρc = density_pure
-  ρw = density_water 
-  Mw = molar_mass_water
-  Mc = molar_mass
+  ρ = density # density of the solution
+  ρc = density_pure # density of the pure cossolvent
+  Mw = molar_mass_water # molar mass of water
+  Mc = molar_mass # molar mass of the cossolvent
 
   # nc and nw are the molar concentrations
-
   if units[1] == "%vv"
-    if ρc == nothing
+    if isnothing(ρc)
       error("Density of pure solvent is required to convert from %vv.")
     end
     vv = cin/100
     nc = ( ρc*vv / Mc )
     if units[2] == "x"
-      if ρ == nothing
+      if isnothing(ρ)
         error("Density of solution is required to convert to molar fraction.")
       end
       nw = ( ρ - nc*Mc ) / Mw
@@ -111,7 +109,7 @@ function convert_c(
   end
 
   if units[1] == "x"
-    if ρ == nothing
+    if isnothing(ρ)
       error("Density of solution is required to convert from molar fraction.")
     end
     x = cin
@@ -120,7 +118,7 @@ function convert_c(
       return 1000*nc
     end
     if units[2] == "%vv"
-      if ρc == nothing
+      if isnothing(ρc)
         error("Density of pure solvent is required to convert to %vv.")
       end
       nw = nc*(1-x)/x
@@ -131,7 +129,7 @@ function convert_c(
   end
 
   if units[1] == "mol/L"
-    if ρ == nothing
+    if isnothing(ρ)
       error("Density of solution is required to convert from molarity.")
     end
     nc = cin/1000 
@@ -140,7 +138,7 @@ function convert_c(
       return nc/(nc + nw)
     end
     if units[2] == "%vv"
-      if ρc == nothing
+      if isnothing(ρc)
         error("Density of pure solvent is required to convert to %vv.")
         return nothing
       end
@@ -174,31 +172,16 @@ function write_input(
   # molar masses (g/mol)
   Mp = mass(protein)
   Mc = mass(cossolvent)
-  Mw = 18.01528
+  Mw = 18.01528 # for water
 
   # aliases for clearer formulas
-  ρ = density
-  ρc = density_pure_solvent
+  ρ = density # of the solution
+  ρc = density_pure_solvent # of the pure solvent
 
   # Convert concentration to mol/L
-  cc_mol = convert_c(
-    concentration, cunit => "mol/L",
-    density=ρ,
-    density_pure=ρc,
-    molar_mass=Mc
-  )
-  c_vv = convert_c(
-    concentration, cunit => "%vv",
-    density=ρ,
-    density_pure=ρc,
-    molar_mass=Mc
-  )
-  c_x = convert_c(
-    concentration, cunit => "x",
-    density=ρ,
-    density_pure=ρc,
-    molar_mass=Mc
-  )
+  cc_mol = convert_c(concentration, cunit => "mol/L", density=ρ, density_pure=ρc, molar_mass=Mc)
+  c_vv = convert_c(concentration, cunit => "%vv", density=ρ, density_pure=ρc, molar_mass=Mc)
+  c_x = convert_c(concentration, cunit => "x", density=ρ, density_pure=ρc, molar_mass=Mc)
 
   # Convert cossolvent concentration in molecules/Å³
   cc = CMC*cc_mol
@@ -209,10 +192,21 @@ function write_input(
   # Solution volume (vbox - vprotein)
   vs = vbox - CMV*Mp/ρ
 
-  # number of cossolvent molecules
+  # number of cossolvent molecules: cossolvent concentration × volume of the solution
   nc = round(Int,cc*vs)
 
-  #number of water molecules
+  #
+  # number of water molecules, obtained from the mass difference
+  #
+  # nc (molecules) / NA (mol) * Mc (g/mol) is the mass of the cossolvent molecules
+  # ρ*vs is the total mass of the solution (density (g/L) × volume (L) 
+  # ρ*vs - (nc/NA)*Mc is the mass of water in the solution (g)
+  # (ρ*vs - (nc/NA)*Mc)/Mw is the number of mols of water in the solution (mol)
+  # NA*(ρ*vs - (nc/NA)*Mc)/Mw is the number of water molcules
+  # rearranging: nw = (NA*ρ*vs - nc*Mc)/Mw 
+  # But since we have vs in Å³, we need the conversion vs = vs / 1e24, and we have
+  # nw = (NA*ρ*vs/1e24 - nc*Mc)/Mw 
+  # given that CMV = 1e24/NA, we have nw = (ρ*vs/CMV - nc*Mc)/Mw
   nw = round(Int,(ρ*vs/CMV - nc*Mc)/Mw)
 
   # Final density of the solution
