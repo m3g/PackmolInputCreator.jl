@@ -1,8 +1,7 @@
 # PackmolInputCreator
 
 This packages helps creating the input files for Packmol, by computing the number of 
-molecules necessary to build a box with a desired concentration. Example of usage with
-all functions: 
+molecules necessary to build a box with a desired concentration. 
 
 ## Installation
 
