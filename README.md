@@ -17,64 +17,85 @@ julia> Pkg.add(url="https://github.com/m3g/PackmolInputCreator.jl")
 
 ```julia
 #
-# run with julia AAQAA_60vv.jl 
+# run with julia script.jl
 #
-
+using PDBTools
 using PackmolInputCreator
+
+# Density as a function of the molar fraction
+# 1.0 means pure solvent, in the terminology used
+# in this script. 0.0 means pure cossolvent. 
+#     x (solvent)       ρ / g/mL
+ρ = [ 0.0000 0.834 # 100% cyclooctane (pure cossolvent) 
+      0.0155 0.82950177137763 
+      0.0301 0.82719220548717
+      0.0394 0.82573745713931
+      0.0523 0.82373025397815
+      0.0596 0.82260208345798
+      0.0983 0.81671172734072
+      0.1431 0.81006305253341
+      0.1863 0.80383951557194
+      0.2213 0.79887269483570
+      0.2522 0.79454950559211
+      0.2801 0.79070471811816
+      0.3126 0.78625680868169
+      0.3365 0.78304392274268
+      0.3681 0.77881926482676
+      0.3964 0.77505872004072
+      0.4112 0.77323017810059
+      0.5196 0.75922947979487
+      0.5613 0.75400203132561
+      0.5906 0.75038054304765
+      0.6226 0.74646150275651
+      0.6541 0.74264222538436
+      0.6905 0.73827093000787
+      0.7295 0.73363732026850
+      0.7751 0.72828702684542
+      0.8161 0.72351198260744
+      0.8832 0.71588112250305
+      0.9225 0.71151341183697
+      0.9403 0.70953358268734
+      0.9573 0.70768096611118
+      0.9778 0.70542722961990 
+      1.0000 0.703 # 100% octane (pure solvent)
+]
 
 # Directory where this script is hosted
 script_dir = @__DIR__
 
-# Density as a function of molar fraction of TFE
-#   FE mol frac  Density (g/mL) ref: https://doi.org/10.1023/A:1005147318013
-ρ = [ 0.00       0.99707       
-      0.00130    0.99931       
-      0.00178    1.00013       
-      0.00264    1.00161       
-      0.00318    1.00253       
-      0.00587    1.00711       
-      0.00792    1.01061       
-      0.00841    1.01145       
-      0.01362    1.02009       
-      0.01550    1.02331       
-      0.01966    1.03032       
-      0.02837    1.04416       
-      0.04430    1.06827       
-      0.06485    1.09668       
-      0.07171    1.10545       
-      0.08744    1.12449       
-      0.1071     1.14364       
-      0.1526     1.18115       
-      0.2126     1.22017       
-      0.2960     1.26039       
-      0.4245     1.30204       
-      0.6088     1.33868       
-      0.7820     1.36029       
-      0.9451     1.37873       
-      1.0000     1.38217  ]
-
-# What we want
-concentration = 50.0 #%vv
+# PDB files
+data_dir="$script_dir/packmol"
+println("Input directory: $data_dir")
+solute_pdbfile = "$data_dir/poly_h.pdb"
+solvent_pdbfile = "$data_dir/octane.pdb"
+cossolvent_pdbfile = "$data_dir/cyclooctane.pdb"
+box_size = 120.0
 
 # Find to what molar fraction this volume fraction corresponds
-x = find_x(concentration, 100.4, 1.38217, ρ)
+x = find_molar_fraction(;
+        target_volume_fraction = 0.5, # what we want 50%vv
+        cossolvent_molar_mass = mass(readPDB(cossolvent_pdbfile)),
+        density_pure_cossolvent = ρ[1,2], # g/mL
+        solvent_molar_mass = mass(readPDB(solvent_pdbfile)),
+        density_pure_solvent = ρ[end,2], # g/mL 
+        densities = ρ,
+)
 println("Molar fraction = $x")
 
 # Iterpolate to get density given molar fraction
 density = interpolate(x,ρ)
 println("Density = $density")
 
-data_dir="$script_dir/../InputData"
-pdbfile = "$data_dir/PDB/AAQAA.pdb"
-solvent_file = "$data_dir/PDB/tfe.pdb"
-water_file = "$data_dir/PDB/tip4p2005.pdb"
-box_size = 56.
-
-write_input(pdbfile, solvent_file, concentration, box_size,
-            water_file=water_file,
-            density=density,
-            density_pure_solvent=1.38217,
-            box_file="box.inp",cunit="%vv")
-
+# Create input file
+write_input(
+    solute_pdbfile = "./packmol/poly_h.pdb",
+    solvent_pdbfile = "./packmol/octane.pdb",
+    cossolvent_pdbfile="./packmol/cyclooctane.pdb",
+    concentration=0.5,
+    box_side = 120.0,
+    density_solution=density,
+    density_pure_cossolvent=ρ[1,2],
+    cunit="x",
+)
 ```
 
