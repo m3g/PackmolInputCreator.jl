@@ -119,8 +119,7 @@ end
         density=nothing, # solution
         density_pure_cossolvent=nothing,
         cossolvent_molar_mass=nothing,
-        solvent_molar_mass=18.0,
-        density_pure_solvent=1.0,
+        solvent_molar_mass=18.0, # defaults to water
     )
 
 Convert concentration from one unit to another. The input
@@ -138,17 +137,15 @@ Depending on the conversion required, different combinations of
 densities as inputs are required. Appropriate error messages
 are thrown if the required densities are not provided.
 
-By default, the solvent is water, with a molar mass of 18.0 g/mol,
-and a density of 1.0 g/mL.
+By default, the solvent is water, with a molar mass of 18.0 g/mol.
 
 """
 function convert_concentration(
     cin, units;
-    density=nothing, # of solution solution
+    density=nothing, # of the solution
     density_pure_cossolvent=nothing,
     cossolvent_molar_mass=nothing,
-    solvent_molar_mass=18.0,
-    density_pure_solvent=1.0,
+    solvent_molar_mass=18.0, # default to water
 )
 
     # If the units didn't change, just return the input concentrations
@@ -162,13 +159,13 @@ function convert_concentration(
     # nc and nw are the molar concentrations
     if units[1] == "vv"
         if isnothing(ρc)
-            error("Density of pure cossolvent is required to convert from volume fraction.")
+            throw(ArgumentError("Density of pure cossolvent is required to convert from volume fraction."))
         end
         vv = cin
         nc = (ρc * vv / Mc)
         if units[2] == "x"
             if isnothing(ρ)
-                error("Density of solution is required to convert to molar fraction.")
+                throw(ArgumentError("Density of solution is required to convert to molar fraction."))
             end
             nw = (ρ - nc * Mc) / Mw
             return nc / (nc + nw)
@@ -180,7 +177,7 @@ function convert_concentration(
 
     if units[1] == "x"
         if isnothing(ρ)
-            error("Density of solution is required to convert from molar fraction.")
+            throw(ArgumentError("Density of solution is required to convert from molar fraction."))
         end
         x = cin
         nc = ρ / (Mc + Mw * (1 - x) / x)
@@ -189,7 +186,7 @@ function convert_concentration(
         end
         if units[2] == "vv"
             if isnothing(ρc)
-                error("Density of pure cossolvent is required to convert to volume fraction.")
+                throw(ArgumentError("Density of pure cossolvent is required to convert to volume fraction."))
             end
             nw = nc * (1 - x) / x
             vv = nc * Mc / ρc
@@ -199,7 +196,7 @@ function convert_concentration(
 
     if units[1] == "mol/L"
         if isnothing(ρ)
-            error("Density of solution is required to convert from molarity.")
+            throw(ArgumentError("Density of solution is required to convert from molarity."))
         end
         nc = cin / 1000
         nw = (ρ - nc * Mc) / Mw
@@ -208,8 +205,7 @@ function convert_concentration(
         end
         if units[2] == "vv"
             if isnothing(ρc)
-                error("Density of pure cossolvent is required to convert to volume fraction.")
-                return nothing
+                throw(ArgumentError("Density of pure cossolvent is required to convert to volume fraction."))
             end
             vv = nc * Mc / ρc
             return vv
@@ -331,6 +327,7 @@ function write_input(;
 
     println(
         """
+
         Summary:
         ========
         Target concentration = $cc_mol mol/L
@@ -356,6 +353,7 @@ function write_input(;
         Final solvent density = $ρ g/mL
         Final volume fraction = $vv 
         Final molar fraction = $(nc/(nc+nw))
+
         """)
 
     l = box_side / 2
