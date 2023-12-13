@@ -125,13 +125,7 @@ function find_molar_fraction(
         xl, xr = density_table[end, 1], density_table[1, 1]
     end
     x = (xr - xl) / 2
-    xnew = convert_concentration(
-        vv, "vv" => "x";
-        density=interpolate(x, density_table),
-        cossolvent_molar_mass=cossolvent_molar_mass, 
-        density_pure_cossolvent=density_pure_cossolvent,
-        solvent_molar_mass=solvent_molar_mass,
-    )
+    xnew = convert_concentration(system, vv, "vv" => "x"; density = interpolate(x, density_table)) 
     it = 0
     debug && println("it = $it, x = $x, xnew = $xnew")
     while abs(xnew - x) > tol
@@ -141,13 +135,7 @@ function find_molar_fraction(
             increasing ? xr = x : xl = x
         end
         x = (xr + xl) / 2
-        xnew = convert_concentration(
-            vv, "vv" => "x", 
-            density=interpolate(x, density_table),
-            cossolvent_molar_mass=cossolvent_molar_mass, 
-            density_pure_cossolvent=density_pure_cossolvent,
-            solvent_molar_mass=solvent_molar_mass,
-        )
+        xnew = convert_concentration(system, vv, "vv" => "x"; density = interpolate(x, density_table))
         it += 1
         debug && println("it = $it, x = $x, xnew = $xnew")
         it > maxit && error("Maximum number of iterations achieved.")
@@ -157,15 +145,15 @@ end
 
 """
     convert_concentration(
-        system::SolutionSystem;
+        system::SolutionSystem,
         input_concentration, 
-        units,
+        units;
         density, # of the solution
     )
 
 Convert concentration from one unit to another. The input
-concentration is given in `cin`, and the unit conversion 
-is given by the pairs:
+concentration is given in `input_concentration`, and the unit conversion 
+is given by `units` keyword, that can be one of the following pairs:
 
 - `"mol/L"` => `"x"`: from molarity to molar fraction
 - `"mol/L"` => `"vv"`: from molarity to volume fraction
@@ -176,78 +164,91 @@ is given by the pairs:
 
 """
 function convert_concentration(
-    system::SolutionSystem;
-    input_concentration, 
-    units,
-    density, # of the solution
+    system::SolutionSystem,
+    input_concentration::Real, 
+    units::Pair{String,String};
+    density::Union{Real,Nothing} = nothing, # of the solution
 )
 
     (; density_pure_cossolvent,
+       density_pure_solvent,
        solvent_molar_mass,
        cossolvent_molar_mass,
     ) = system
 
     # If the units didn't change, just return the input concentrations
-    units[1] == units[2] && return input_concentration
+    first(units) == last(units) && return input_concentration
 
     ρ = density # density of the solution
     ρc = density_pure_cossolvent # density of the pure cossolvent
+    ρw = density_pure_solvent # density of the pure solvent
     Mw = solvent_molar_mass # molar mass of solvent 
     Mc = cossolvent_molar_mass # molar mass of the cossolvent
 
-    # nc and nw are the molar concentrations
-    if units[1] == "vv"
-        if isnothing(ρc)
-            throw(ArgumentError("Density of pure cossolvent is required to convert from volume fraction."))
-        end
-        vv = input_concentration
-        nc = (ρc * vv / Mc)
-        if units[2] == "x"
-            if isnothing(ρ)
-                throw(ArgumentError("Density of solution is required to convert to molar fraction."))
-            end
-            nw = (ρ - nc * Mc) / Mw
-            return nc / (nc + nw)
-        end
-        if units[2] == "mol/L"
-            return 1000 * nc
+    # Check if density of solution was provided, in the case of molar
+    # fraction conversions. Also, to converto to other units from molarity, we need ρ
+    if isnothing(ρ)
+        if last(units) == "mol/L" || last(units) == "mol/L" 
+            throw(ArgumentError(
+                """
+                Density of solution is required to convert from/to molarity.
+                Use the optional keyword argument `density` to provide it.
+                """))
         end
     end
 
-    if units[1] == "x"
-        if isnothing(ρ)
-            throw(ArgumentError("Density of solution is required to convert from molar fraction."))
+    # nc and nw are the molar concentrations
+    if first(units) == "vv"
+        if !(0 <= input_concentration <= 1)
+            throw(ArgumentError("Volume fraction must be in the [0,1] range."))
         end
-        x = input_concentration
-        nc = ρ / (Mc + Mw * (1 - x) / x)
-        if units[2] == "mol/L"
-            return 1000 * nc
+        # mL * g/ml / g/mol = mol 
+        vv = input_concentration
+        Nc = (ρc * vv) / Mc # number of cossolvent molecules in 1mL of ideal solution
+        Nw = ρw * (1 - vv) / Mw # number of solvent molecules in 1mL of ideal solution
+        if last(units) == "x"
+            x = Nc / (Nc + Nw) # molar fraction
+            return x
         end
-        if units[2] == "vv"
-            if isnothing(ρc)
-                throw(ArgumentError("Density of pure cossolvent is required to convert to volume fraction."))
-            end
-            nw = nc * (1 - x) / x
-            vv = nc * Mc / ρc
+        if last(units) == "mol/L"
+            mt = Nc * Mc + Nw * Mw # mass of the solution (for 1 mol total)
+            v = mt / (1000*ρ) # volume of the solution (for 1 mol total)
+            return Nc / v # mol/L
+        end
+    end
+
+    if first(units) == "x"
+        if !(0 <= input_concentration <= 1)
+            throw(ArgumentError("Molar fraction must be in the [0,1] range."))
+        end
+        x = input_concentration # molar fraction
+        if last(units) == "mol/L"
+            m = x * Mc + (1 - x) * Mw # g/mol: mass of the solution
+            v = m / (ρ*1000) # L/mol: volume
+            return x / v # mol/L: molarity of the solution 
+        end
+        if last(units) == "vv"
+            vc = Mc *  x / ρc # Volume of x mols of pure cossolvent 
+            vw = Mw * (1 - x) / ρw # Volume of (1-x) mols of pure solvent 
+            vv = vc / (vc + vw) # volume fraction of cossolvent in ideal solution
             return vv
         end
     end
 
-    if units[1] == "mol/L"
-        if isnothing(ρ)
-            throw(ArgumentError("Density of solution is required to convert from molarity."))
+    if first(units) == "mol/L"
+        pure_c = 1000 * ρc / Mc  
+        if !(0 <= input_concentration <= pure_c)
+            throw(ArgumentError("Cossolvent molarity must be in the [0,$pure_c] range."))
         end
         nc = input_concentration / 1000
         nw = (ρ - nc * Mc) / Mw
-        if units[2] == "x"
+        if last(units) == "x"
             return nc / (nc + nw)
         end
-        if units[2] == "vv"
-            if isnothing(ρc)
-                throw(ArgumentError("Density of pure cossolvent is required to convert to volume fraction."))
-            end
-            vv = nc * Mc / ρc
-            return vv
+        if last(units) == "vv"
+            vc = nc * Mc / ρc
+            vw = nw * Mw / ρw
+            return vc / (vc + vw)
         end
     end
 
@@ -299,9 +300,9 @@ function write_input(
     ρc = density_pure_cossolvent # of the pure cossolvent
 
     # Convert concentration to mol/L
-    cc_mol = convert_concentration(system; concentration, cunit => "mol/L" )
-    c_vv = convert_concentration(system; concentration, cunit => "vv")
-    c_x = convert_concentration(system; concentration, cunit => "x")
+    cc_mol = convert_concentration(system, concentration, cunit => "mol/L")
+    c_vv = convert_concentration(system, concentration, cunit => "vv")
+    c_x = convert_concentration(system, concentration, cunit => "x")
 
     # Convert cossolvent concentration in molecules/Å³
     cc = CMC * cc_mol
