@@ -6,6 +6,56 @@ export find_molar_fraction
 export convert_concentration
 export write_input
 export interpolate
+export SolutionSystem
+
+project_dir = @__DIR__
+
+@kwdef struct SolutionSystem
+    solute_pdbfile::String
+    solvent_pdbfile::String
+    cossolvent_pdbfile::String
+    density_table::Matrix{Float64}
+    density_pure_solvent::Float64 = density_table[begin, 2]
+    density_pure_cossolvent::Float64 = density_table[end, 2]
+    solute_molar_mass::Float64 = mass(readPDB(solute_pdbfile))
+    solvent_molar_mass::Float64 = mass(readPDB(solvent_pdbfile))
+    cossolvent_molar_mass::Float64 = mass(readPDB(cossolvent_pdbfile))
+end
+
+"""
+    SolutionSystem(; 
+        solute_pdbfile::String, 
+        solvent_pdbfile::String,
+        cossolvent_pdbfile::String,
+        density_table::Matrix{Float64},
+        density_pure_solvent::Float64 = density_table[begin, 2],
+        density_pure_cossolvent::Float64 = density_table[end, 2],
+    )
+
+Setup system properties. If the densities of the pure solvent and 
+cossolvent are not provided, the first and last rows of the density
+table are used, respectively.
+
+"""
+function SolutionSystem end
+
+function Base.show(io::IO, ::MIME"text/plain", system::SolutionSystem)
+    print(io, chomp("""
+    ==================================================================
+    SolutionSystem properties:
+    ==================================================================
+        Solute pdb file: $(basename(system.solute_pdbfile))
+        Solvent pdb file: $(basename(system.solvent_pdbfile))
+        Cossolvent pdb file: $(basename(system.cossolvent_pdbfile))
+        Density of pure solvent: $(system.density_pure_solvent) g/mL
+        Density of pure cossolvent: $(system.density_pure_cossolvent) g/mL
+        Molar masses: 
+            solute: $(system.solute_molar_mass) g/mol
+            solvent: $(system.solvent_molar_mass) g/mol
+            cossolvent: $(system.cossolvent_molar_mass) g/mol
+    ==================================================================
+    """))
+end
 
 # conversion factor from mL/mol to Å^3/molecule
 const CMV = 1e24 / 6.02e23
@@ -22,20 +72,19 @@ to the domain ρ[:,1].
 
 """
 function interpolate(x, ρ)
-    i = findfirst(d -> d > x, @view(ρ[:, 1]))
+    i = findfirst(d -> d >= x, @view(ρ[:, 1]))
+    i == firstindex(@view(ρ[:, 1])) && return ρ[i, 2]
+    ρ[i] == x && return ρ[i, 2]
     dρdx = (ρ[i, 2] - ρ[i-1, 2]) / (ρ[i, 1] - ρ[i-1, 1])
     d = ρ[i-1, 2] + dρdx * (x - ρ[i-1, 1])
     return d
 end
 
 """
-    find_molar_fraction(;
+    find_molar_fraction(
+        system::SolutionSystem;
         target_volume_fraction, # [0.0, 1.0] range
-        densities::Matrix, # (x, density) data
-        cossolvent_molar_mass, # g/mol  
-        density_pure_cossolvent, # g/mL
-        solvent_molar_mass = 18.0, # g/mol default: water
-        density_pure_solvent = 1.0, # g/mL default: water
+        # Optional parameters
         tol=1e-5, maxit=1000, debug=false
     )
 
@@ -45,14 +94,8 @@ as a function of the molar fractions.
 
 The input parameter are:
 
+- `system`: a `SolutionSystem` object
 - `target_volume_fraction`: desired volume fraction 
-- `cossolvent_molar_mass`: molar mass of the cossolvent
-- `density_pure_cossolvent`: density of the pure solvent
-- `densities`: a matrix with two columns, the first one with the
-   molar fractions and the second one with the densities of the
-   mixture.
-- `solvent_molar_mass`: molar mass of the solvent (default: 18.0 - water)
-- `density_pure_solvent`: density of the pure solvent (default: 1.0 - water)
 
 Optional parameters:
 
@@ -61,33 +104,33 @@ Optional parameters:
 - `debug`: true/false to print debug information
 
 """
-function find_molar_fraction(;
+function find_molar_fraction(
+    system::SolutionSystem ;
     target_volume_fraction,
-    densities,
-    cossolvent_molar_mass,
-    density_pure_cossolvent,
-    solvent_molar_mass = 18.0,
-    density_pure_solvent = 1.0,
     tol=1e-5, maxit=1000, debug = false
 )
+    (; density_table,
+       density_pure_cossolvent,
+       solvent_molar_mass,
+       cossolvent_molar_mass,
+    ) = system
     vv = target_volume_fraction 
-    if !(0 < vv < 1)
+    if !(0 <= vv <= 1)
         throw(ArgumentError("Target volume fraction must be in the [0,1] range."))
     end
-    increasing = densities[1, 1] < densities[end, 1]
+    increasing = density_table[1, 1] < density_table[end, 1]
     if increasing
-        xl, xr = densities[1, 1], densities[end, 1]
+        xl, xr = density_table[1, 1], density_table[end, 1]
     else
-        xl, xr = densities[end, 1], densities[1, 1]
+        xl, xr = density_table[end, 1], density_table[1, 1]
     end
     x = (xr - xl) / 2
     xnew = convert_concentration(
         vv, "vv" => "x";
-        density=interpolate(x, densities),
+        density=interpolate(x, density_table),
         cossolvent_molar_mass=cossolvent_molar_mass, 
         density_pure_cossolvent=density_pure_cossolvent,
         solvent_molar_mass=solvent_molar_mass,
-        density_pure_solvent=density_pure_solvent,
     )
     it = 0
     debug && println("it = $it, x = $x, xnew = $xnew")
@@ -100,11 +143,10 @@ function find_molar_fraction(;
         x = (xr + xl) / 2
         xnew = convert_concentration(
             vv, "vv" => "x", 
-            density=interpolate(x, densities),
+            density=interpolate(x, density_table),
             cossolvent_molar_mass=cossolvent_molar_mass, 
             density_pure_cossolvent=density_pure_cossolvent,
             solvent_molar_mass=solvent_molar_mass,
-            density_pure_solvent=density_pure_solvent,
         )
         it += 1
         debug && println("it = $it, x = $x, xnew = $xnew")
@@ -115,11 +157,10 @@ end
 
 """
     convert_concentration(
-        cin, units;
-        density=nothing, # solution
-        density_pure_cossolvent=nothing,
-        cossolvent_molar_mass=nothing,
-        solvent_molar_mass=18.0, # defaults to water
+        system::SolutionSystem;
+        input_concentration, 
+        units,
+        density, # of the solution
     )
 
 Convert concentration from one unit to another. The input
@@ -133,23 +174,21 @@ is given by the pairs:
 - `"vv"` => `"mol/L"`: from volume fraction to molarity
 - `"vv"` => `"x"`: from volume fraction to molar fraction
 
-Depending on the conversion required, different combinations of 
-densities as inputs are required. Appropriate error messages
-are thrown if the required densities are not provided.
-
-By default, the solvent is water, with a molar mass of 18.0 g/mol.
-
 """
 function convert_concentration(
-    cin, units;
-    density=nothing, # of the solution
-    density_pure_cossolvent=nothing,
-    cossolvent_molar_mass=nothing,
-    solvent_molar_mass=18.0, # default to water
+    system::SolutionSystem;
+    input_concentration, 
+    units,
+    density, # of the solution
 )
 
+    (; density_pure_cossolvent,
+       solvent_molar_mass,
+       cossolvent_molar_mass,
+    ) = system
+
     # If the units didn't change, just return the input concentrations
-    units[1] == units[2] && return cin
+    units[1] == units[2] && return input_concentration
 
     ρ = density # density of the solution
     ρc = density_pure_cossolvent # density of the pure cossolvent
@@ -161,7 +200,7 @@ function convert_concentration(
         if isnothing(ρc)
             throw(ArgumentError("Density of pure cossolvent is required to convert from volume fraction."))
         end
-        vv = cin
+        vv = input_concentration
         nc = (ρc * vv / Mc)
         if units[2] == "x"
             if isnothing(ρ)
@@ -179,7 +218,7 @@ function convert_concentration(
         if isnothing(ρ)
             throw(ArgumentError("Density of solution is required to convert from molar fraction."))
         end
-        x = cin
+        x = input_concentration
         nc = ρ / (Mc + Mw * (1 - x) / x)
         if units[2] == "mol/L"
             return 1000 * nc
@@ -198,7 +237,7 @@ function convert_concentration(
         if isnothing(ρ)
             throw(ArgumentError("Density of solution is required to convert from molarity."))
         end
-        nc = cin / 1000
+        nc = input_concentration / 1000
         nw = (ρ - nc * Mc) / Mw
         if units[2] == "x"
             return nc / (nc + nw)
@@ -215,15 +254,10 @@ function convert_concentration(
 end
 
 """
-    write_input(;
-        solute_pdbfile::String, 
-        solvent_pdbfile::String,
-        cossolvent_pdbfile::String,
+    write_input(
+        system::SolutionSystem;
         concentration::Real, 
         box_side::Real,
-        density_solution=1.0,
-        density_pure_solvent=nothing,
-        density_pure_cossolvent=nothing,
         cunit="mol/L",
         packmol_input="box.inp",
         packmol_output="system.pdb"
@@ -237,55 +271,37 @@ Depending on the desired output concentration, the densities of the pure
 components of the solution are required. 
 
 """
-function write_input(;
-    solute_pdbfile::String, 
-    solvent_pdbfile::String,
-    cossolvent_pdbfile::String,
+function write_input(
+    system::SolutionSystem;
     concentration::Real, 
     box_side::Real,
-    density_solution=1.0,
-    density_pure_solvent=nothing,
-    density_pure_cossolvent=nothing,
     cunit="mol/L",
     packmol_input="box.inp",
     packmol_output="system.pdb"
 )
 
-    solute = readPDB(solute_pdbfile)
-    solvent = readPDB(solvent_pdbfile)
-    cossolvent = readPDB(cossolvent_pdbfile)
+    (; solute_pdbfile,
+       solvent_pdbfile,
+       cossolvent_pdbfile,
+       density_pure_cossolvent,
+       solute_molar_mass,
+       solvent_molar_mass,
+       cossolvent_molar_mass,
+    ) = system
 
     # molar masses (g/mol)
-    Mp = mass(solute) # Mp stands for "protein": solute
-    Mc = mass(cossolvent) # Mc stands for "cossolvent"
-    Mw = mass(solvent) # Mw is for "water": solvent
+    Mp = solute_molar_mass
+    Mc = cossolvent_molar_mass
+    Mw = solvent_molar_mass
 
     # aliases for clearer formulas
     ρ = density_solution # of the solution
     ρc = density_pure_cossolvent # of the pure cossolvent
 
     # Convert concentration to mol/L
-    cc_mol = convert_concentration(
-        concentration, 
-        cunit => "mol/L", 
-        density=ρ, 
-        density_pure_cossolvent=ρc, 
-        cossolvent_molar_mass=Mc
-    )
-    c_vv = convert_concentration(
-        concentration, 
-        cunit => "vv", 
-        density=ρ, 
-        density_pure_cossolvent=ρc, 
-        cossolvent_molar_mass=Mc
-    )
-    c_x = convert_concentration(
-        concentration, 
-        cunit => "x", 
-        density=ρ, 
-        density_pure_cossolvent=ρc, 
-        cossolvent_molar_mass=Mc
-    )
+    cc_mol = convert_concentration(system; concentration, cunit => "mol/L" )
+    c_vv = convert_concentration(system; concentration, cunit => "vv")
+    c_x = convert_concentration(system; concentration, cunit => "x")
 
     # Convert cossolvent concentration in molecules/Å³
     cc = CMC * cc_mol
